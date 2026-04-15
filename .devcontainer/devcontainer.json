@@ -1,0 +1,29 @@
+{
+  "name": "Node.js & Firebase",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "VARIANT": "20-bullseye"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "googlecloudtools.cloudcode"
+      ]
+    }
+  },
+  "forwardPorts": [
+    3000,
+    4000,
+    5000,
+    5001,
+    8080,
+    9099
+  ],
+  "postCreateCommand": "npm install",
+  "remoteUser": "node"
+}
