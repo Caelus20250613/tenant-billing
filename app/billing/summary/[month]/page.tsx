@@ -9,6 +9,12 @@ import { useParams } from "next/navigation";
 
 import { getBillingRecords, getTenants } from "@/src/lib/firestore";
 
+const normalizeName = (name: string) => {
+  if (!name) return "";
+  // Strip trailing circle numbers ①-⑳ and standard digits
+  return name.replace(/[①-⑳0-9]+$/, '').trim();
+};
+
 export default function SummaryPage() {
   const params = useParams();
   const month = typeof params?.month === 'string' ? params.month : '2026-04';
@@ -20,29 +26,50 @@ export default function SummaryPage() {
       const records = await getBillingRecords(month);
       const tenants = await getTenants();
 
-      const combined: InvoiceData[] = records.map(r => {
+      // Grouping process
+      const groups: Record<string, { recipientName: string; records: { record: any; tenant: any }[] }> = {};
+      
+      records.forEach(r => {
         const tenant = tenants.find(t => t.id === r.tenantId);
+        const recipientName = tenant?.billingName || normalizeName(tenant?.roomName || "不明なテナント");
         
-        const buildDetail = (type: 'light'|'power'|'water') => {
-          const detail = r.readings[type];
-          if (!detail) return null;
-          // check if tenant doesn't actually have this meter now, optional but safe
-          return {
-            previousValue: detail.previousValue,
-            currentValue: detail.currentValue,
-            usage: detail.usage,
-            fee: detail.calculatedFee
-          };
-        };
+        if (!groups[recipientName]) {
+          groups[recipientName] = { recipientName, records: [] };
+        }
+        groups[recipientName].records.push({ record: r, tenant });
+      });
+
+      const combined: InvoiceData[] = Object.entries(groups).map(([key, group]) => {
+        const items: any[] = [];
+        let total = 0;
+
+        group.records.forEach(({ record, tenant }) => {
+          const roomLabel = tenant ? ` (${tenant.roomName})` : "";
+          
+          (['light', 'power', 'water'] as const).forEach(type => {
+            const detail = record.readings[type];
+            if (detail && detail.usage > 0 || detail?.calculatedFee > 0) {
+              const labels: Record<string, string> = { light: "電灯", power: "動力", water: "水道" };
+              items.push({
+                id: `${record.id}-${type}`,
+                type,
+                label: `${labels[type]}${group.records.length > 1 ? roomLabel : ""}`,
+                previousValue: detail.previousValue,
+                currentValue: detail.currentValue,
+                usage: detail.usage,
+                fee: detail.calculatedFee
+              });
+            }
+          });
+          total += record.totalAmount;
+        });
 
         return {
-          tenantId: r.tenantId,
-          tenantName: tenant ? tenant.roomName : "不明なテナント",
-          billingMonth: r.billingMonth,
-          light: buildDetail('light'),
-          power: buildDetail('power'),
-          water: buildDetail('water'),
-          totalAmount: r.totalAmount
+          groupId: key,
+          recipientName: group.recipientName,
+          billingMonth: month,
+          items,
+          totalAmount: total
         };
       });
 
@@ -83,37 +110,45 @@ export default function SummaryPage() {
         <Table>
           <TableHeader className="bg-gray-50">
             <TableRow>
-              <TableHead>テナント</TableHead>
-              <TableHead className="text-right">電灯</TableHead>
-              <TableHead className="text-right">動力</TableHead>
-              <TableHead className="text-right">水道</TableHead>
+              <TableHead>請求先</TableHead>
+              <TableHead className="text-right">内訳数</TableHead>
+              <TableHead className="text-right font-bold">小計 (電灯)</TableHead>
+              <TableHead className="text-right font-bold">小計 (動力)</TableHead>
+              <TableHead className="text-right font-bold">小計 (水道)</TableHead>
               <TableHead className="text-right font-bold">合計金額</TableHead>
               <TableHead className="text-center">ステータス</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((inv) => (
-              <TableRow key={inv.tenantId}>
-                <TableCell className="font-medium text-gray-800">{inv.tenantName}</TableCell>
-                <TableCell className="text-right text-gray-600">
-                  {inv.light !== null && inv.light.fee !== null ? `¥${inv.light.fee.toLocaleString()}` : '-'}
-                </TableCell>
-                <TableCell className="text-right text-gray-600">
-                  {inv.power !== null && inv.power.fee !== null ? `¥${inv.power.fee.toLocaleString()}` : '-'}
-                </TableCell>
-                <TableCell className="text-right text-gray-600">
-                  {inv.water !== null && inv.water.fee !== null ? `¥${inv.water.fee.toLocaleString()}` : '-'}
-                </TableCell>
-                <TableCell className="text-right font-bold text-blue-700">
-                  ¥{inv.totalAmount.toLocaleString()}
-                </TableCell>
-                <TableCell className="text-center">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                    承認済
-                  </span>
-                </TableCell>
-              </TableRow>
-            ))}
+            {invoices.map((inv) => {
+              const sumFee = (type: string) => inv.items
+                .filter(i => i.type === type)
+                .reduce((acc, curr) => acc + curr.fee, 0);
+
+              return (
+                <TableRow key={inv.groupId}>
+                  <TableCell className="font-medium text-gray-800">{inv.recipientName}</TableCell>
+                  <TableCell className="text-right text-gray-500">{inv.items.length}</TableCell>
+                  <TableCell className="text-right text-gray-600">
+                    ¥{sumFee('light').toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right text-gray-600">
+                    ¥{sumFee('power').toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right text-gray-600">
+                    ¥{sumFee('water').toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-blue-700">
+                    ¥{inv.totalAmount.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                      承認済
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

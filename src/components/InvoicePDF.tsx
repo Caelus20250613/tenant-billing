@@ -98,20 +98,21 @@ const styles = StyleSheet.create({
   },
 });
 
-export interface InvoiceInfraDetail {
+export interface InvoiceLineItem {
+  id: string;
+  type: 'light' | 'power' | 'water';
+  label: string;
   previousValue: number | null;
   currentValue: number | null;
-  usage: number | null;
-  fee: number | null;
+  usage: number;
+  fee: number;
 }
 
 export interface InvoiceData {
-  tenantId: string;
-  tenantName: string;
+  groupId: string;
+  recipientName: string;
   billingMonth: string;
-  light: InvoiceInfraDetail | null;
-  power: InvoiceInfraDetail | null;
-  water: InvoiceInfraDetail | null;
+  items: InvoiceLineItem[];
   totalAmount: number;
 }
 
@@ -119,7 +120,7 @@ export const InvoicePDFDocument = ({ invoices }: { invoices: InvoiceData[] }) =>
   return (
     <Document>
       {invoices.map((inv) => (
-        <Page key={inv.tenantId} size="A4" style={styles.page}>
+        <Page key={inv.groupId} size="A4" style={styles.page}>
           
           <View style={styles.headerContainer}>
             <Text style={styles.title}>御請求書</Text>
@@ -127,7 +128,7 @@ export const InvoicePDFDocument = ({ invoices }: { invoices: InvoiceData[] }) =>
           </View>
 
           <View style={styles.tenantBox}>
-            <Text style={styles.tenantName}>{inv.tenantName} 御中</Text>
+            <Text style={styles.tenantName}>{inv.recipientName} 御中</Text>
           </View>
 
           <View style={styles.table}>
@@ -139,35 +140,18 @@ export const InvoicePDFDocument = ({ invoices }: { invoices: InvoiceData[] }) =>
               <Text style={styles.colFee}>金額</Text>
             </View>
 
-            {inv.light !== null && inv.light.fee !== null && (
-              <View style={styles.tableRow}>
-                <Text style={styles.colType}>電灯</Text>
-                <Text style={styles.colPrev}>{inv.light.previousValue?.toLocaleString()}</Text>
-                <Text style={styles.colCur}>{inv.light.currentValue?.toLocaleString()}</Text>
-                <Text style={styles.colUsage}>{inv.light.usage?.toLocaleString()}</Text>
-                <Text style={styles.colFee}>¥ {inv.light.fee?.toLocaleString()}</Text>
+            {inv.items.map((item) => (
+              <View key={item.id} style={styles.tableRow}>
+                <Text style={styles.colType}>{item.label}</Text>
+                <Text style={styles.colPrev}>{item.previousValue?.toLocaleString()}</Text>
+                <Text style={styles.colCur}>{item.currentValue?.toLocaleString()}</Text>
+                <Text style={styles.colUsage}>
+                  {item.usage.toLocaleString()}
+                  {item.type === 'water' ? ' m³' : ''}
+                </Text>
+                <Text style={styles.colFee}>¥ {item.fee.toLocaleString()}</Text>
               </View>
-            )}
-
-            {inv.power !== null && inv.power.fee !== null && (
-              <View style={styles.tableRow}>
-                <Text style={styles.colType}>動力</Text>
-                <Text style={styles.colPrev}>{inv.power.previousValue?.toLocaleString()}</Text>
-                <Text style={styles.colCur}>{inv.power.currentValue?.toLocaleString()}</Text>
-                <Text style={styles.colUsage}>{inv.power.usage?.toLocaleString()}</Text>
-                <Text style={styles.colFee}>¥ {inv.power.fee?.toLocaleString()}</Text>
-              </View>
-            )}
-
-            {inv.water !== null && inv.water.fee !== null && (
-              <View style={styles.tableRow}>
-                <Text style={styles.colType}>水道</Text>
-                <Text style={styles.colPrev}>{inv.water.previousValue?.toLocaleString()}</Text>
-                <Text style={styles.colCur}>{inv.water.currentValue?.toLocaleString()}</Text>
-                <Text style={styles.colUsage}>{inv.water.usage?.toLocaleString()} m³</Text>
-                <Text style={styles.colFee}>¥ {inv.water.fee?.toLocaleString()}</Text>
-              </View>
-            )}
+            ))}
           </View>
 
           <View style={styles.totalContainer}>

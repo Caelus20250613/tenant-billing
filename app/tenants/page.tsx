@@ -51,6 +51,7 @@ export default function TenantsPage() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const roomName = formData.get("roomName") as string;
+    const billingName = formData.get("billingName") as string;
     const isActive = formData.get("isActive") === "on";
     
     const settings = {
@@ -73,9 +74,9 @@ export default function TenantsPage() {
 
     try {
       if (editingTenant) {
-        await updateTenant(editingTenant.id, { roomName, isActive, settings });
+        await updateTenant(editingTenant.id, { roomName, billingName, isActive, settings });
       } else {
-        await createTenant({ roomName, isActive, sortOrder: tenants.length + 1, settings });
+        await createTenant({ roomName, billingName, isActive, sortOrder: tenants.length + 1, settings });
       }
       setIsDialogOpen(false);
       await loadTenants();
@@ -96,6 +97,7 @@ export default function TenantsPage() {
           <TableHeader className="bg-gray-50/50">
             <TableRow>
               <TableHead className="w-[150px] font-semibold text-gray-700">部屋名</TableHead>
+              <TableHead className="w-[150px] font-semibold text-gray-700">請求先名</TableHead>
               <TableHead className="w-[100px] font-semibold text-gray-700">稼働状況</TableHead>
               <TableHead className="font-semibold text-gray-700">電灯 基本/単価</TableHead>
               <TableHead className="font-semibold text-gray-700">動力 基本/単価</TableHead>
@@ -107,6 +109,7 @@ export default function TenantsPage() {
             {tenants.map((tenant) => (
               <TableRow key={tenant.id} className="transition-colors hover:bg-gray-50/50">
                 <TableCell className="font-medium">{tenant.roomName}</TableCell>
+                <TableCell className="text-gray-600">{tenant.billingName || "-"}</TableCell>
                 <TableCell>
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
@@ -170,6 +173,17 @@ export default function TenantsPage() {
                   defaultValue={editingTenant?.roomName || ""}
                   required
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="billingName" className="font-semibold text-gray-700">請求先名 (任意)</Label>
+                <Input
+                  id="billingName"
+                  name="billingName"
+                  placeholder="空欄の場合は「部屋名」が使用されます"
+                  defaultValue={editingTenant?.billingName || ""}
+                />
+                <p className="text-[11px] text-gray-500">※同じ名称のテナントは一つの請求書にまとめられます</p>
               </div>
 
               <div className="flex items-center space-x-2">

@@ -7,6 +7,7 @@ export interface InfraSetting {
 export interface Tenant {
   id: string;
   roomName: string;
+  billingName?: string; // Additional field for grouping invoices
   sortOrder: number;
   isActive: boolean;
   settings: {
