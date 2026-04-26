@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Building2, PencilLine, FileText, LayoutDashboard, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/src/lib/firebase";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [currentMonth, setCurrentMonth] = useState("");
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const handleLogout = async () => {
     try {
@@ -27,6 +28,12 @@ export default function Sidebar() {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     setCurrentMonth(`${year}-${month}`);
+
+    // Firebase Auth のログインユーザーを取得
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
   }, []);
 
   // サーバーサイド・初回マウント時はフォールバック
@@ -78,15 +85,17 @@ export default function Sidebar() {
       <div className="p-4 border-t border-gray-800 bg-gray-900/50">
         <div className="text-xs text-gray-500 mb-1">ログインユーザー</div>
         <div className="text-sm font-medium flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs">
-              管
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-xs flex-shrink-0">
+              {currentUser?.displayName?.[0] ?? currentUser?.email?.[0]?.toUpperCase() ?? "管"}
             </div>
-            システム管理者
+            <span className="truncate text-gray-200 text-xs">
+              {currentUser?.displayName ?? currentUser?.email ?? "システム管理者"}
+            </span>
           </div>
-          <button 
+          <button
             onClick={handleLogout}
-            className="text-gray-400 hover:text-white hover:bg-gray-800 p-1.5 rounded transition-colors"
+            className="text-gray-400 hover:text-white hover:bg-gray-800 p-1.5 rounded transition-colors flex-shrink-0"
             title="ログアウト"
           >
             <LogOut className="w-4 h-4" />

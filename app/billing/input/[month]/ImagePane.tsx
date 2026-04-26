@@ -29,13 +29,13 @@ export default function ImagePane() {
             ref={fileInputRef} 
             onChange={handleImageUpload} 
           />
-          <button 
+          <button
             disabled
             className="flex items-center gap-1 text-xs font-medium text-gray-400 bg-gray-50 cursor-not-allowed px-3 py-1.5 rounded border border-gray-200"
-            title="将来的に実装予定です"
+            title="検針表の分析はGemini等のAIチャットで行い、結果を「AIの結果を一括入力」から貼り付けてください"
           >
             <Upload className="w-3.5 h-3.5" />
-            画像アップロード（準備中）
+            画像アップロード（無効）
           </button>
         </div>
       </div>

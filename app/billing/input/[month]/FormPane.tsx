@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent, useEffect } from "react";
-import { useParams } from "next/navigation";
-import { Copy, ClipboardType } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { Copy, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 import { calculateInfraBilling } from "@/src/utils/billingCalculator";
-import { getTenants, getBillingRecords, saveBillingRecordsBatch } from "@/src/lib/firestore";
+import { getTenants, getBillingRecords, saveBillingRecordsBatch, updateBillingRecordsStatus } from "@/src/lib/firestore";
 import { MonthlyBillingRecord } from "@/src/types";
 import { useOCRStore } from "@/src/store/useOCRStore";
 
@@ -45,16 +46,24 @@ const infraLabels: Record<InfraType, string> = {
   water: "水道",
 };
 
+// YYYY-MM を前後にずらす
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function FormPane() {
   const params = useParams();
-  const month = typeof params?.month === 'string' ? params.month : '2026-04';
-  
+  const router = useRouter();
+  const month = typeof params?.month === 'string' ? params.month : '';
+
   const [data, setData] = useState<TenantItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPasteDialogOpen, setIsPasteDialogOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const inputRefs = useRef<{ [key: string]: HTMLInputElement }>({});
-  
+
   const { extractedValues, clearExtractedValues, setExtractedValues } = useOCRStore();
 
   const RECOMMENDED_PROMPT = `あなたは検針表のデータ抽出エキスパートです。
@@ -68,9 +77,10 @@ export default function FormPane() {
 
   const copyPrompt = () => {
     navigator.clipboard.writeText(RECOMMENDED_PROMPT);
-    alert("AIへの指示文（プロンプト）をコピーしました！Gemini等に貼り付けてください。");
+    toast.success("AIへの指示文をコピーしました。Gemini等に貼り付けてください。");
   };
 
+  // OCR抽出値をフォームに反映
   useEffect(() => {
     if (extractedValues.length > 0 && data.length > 0) {
       setData((prev) => {
@@ -94,42 +104,45 @@ export default function FormPane() {
   }, [extractedValues, data.length, clearExtractedValues]);
 
   const handlePasteApply = () => {
-    // 改行や空白・記号混じりのテキストから数値だけを順番に抽出
     const numbers = pastedText.match(/\d+(\.\d+)?/g);
     if (numbers) {
       const values = numbers.map(n => parseFloat(n));
       setExtractedValues(values);
       setPastedText("");
       setIsPasteDialogOpen(false);
-      alert(`${values.length}個の数値を抽出して反映しました。内容を確認してください。`);
+      toast.success(`${values.length}個の数値を反映しました。内容をご確認ください。`);
     } else {
-      alert("数値が見つかりませんでした。");
+      toast.error("数値が見つかりませんでした。");
     }
   };
 
+  // データをPENDINGとして保存
   const handleSaveToFirestore = async () => {
     try {
       const recordsToSave: MonthlyBillingRecord[] = data.map(t => {
         const buildMeterReading = (infra: InfraData | null) => {
           if (!infra) return { previousValue: 0, currentValue: 0, usage: 0, calculatedFee: 0 };
           const cur = typeof infra.current === 'number' ? infra.current : 0;
-          const usage = Math.max(0, cur - infra.previous);
-          const fee = Math.floor(infra.baseFee + (usage * infra.unitPrice));
+          // 共通の計算ロジックを使用（billingCalculator と一致させる）
+          const result = calculateInfraBilling(infra.previous, cur, {
+            baseFee: infra.baseFee,
+            unitPrice: infra.unitPrice,
+          });
           return {
             previousValue: infra.previous,
             currentValue: cur,
-            usage: usage,
-            calculatedFee: fee
+            usage: result.usage ?? 0,
+            calculatedFee: result.fee ?? 0,
           };
         };
-        
-        let total = 0;
+
         const light = buildMeterReading(t.light);
         const power = buildMeterReading(t.power);
         const water = buildMeterReading(t.water);
-        if (t.light) total += light.calculatedFee;
-        if (t.power) total += power.calculatedFee;
-        if (t.water) total += water.calculatedFee;
+        const total =
+          (t.light ? light.calculatedFee : 0) +
+          (t.power ? power.calculatedFee : 0) +
+          (t.water ? water.calculatedFee : 0);
 
         return {
           id: t.recordId || '',
@@ -137,59 +150,79 @@ export default function FormPane() {
           tenantId: t.tenantId,
           readings: { light, power, water },
           totalAmount: total,
-          status: 'APPROVED' as const
+          status: 'PENDING' as const,
         };
       });
 
       await saveBillingRecordsBatch(recordsToSave);
-      alert("データを保存しました");
-    } catch(err) {
+      toast.success("データを保存しました（ステータス: 未承認）");
+      // 保存後にリロードして recordId を最新化
+      await loadData();
+    } catch (err) {
       console.error(err);
-      alert("保存に失敗しました");
+      toast.error("保存に失敗しました。");
     }
   };
 
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      const tenants = await getTenants();
+  // 保存済みレコードを一括承認
+  const handleApprove = async () => {
+    try {
       const records = await getBillingRecords(month);
-      
-      // 前月の年月を計算
-      const [y, m] = month.split('-');
-      const prevDate = new Date(Number(y), Number(m) - 2);
-      const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
-      const prevRecords = await getBillingRecords(prevMonthStr);
-
-      const mergedData: TenantItem[] = tenants.map(tenant => {
-        const record = records.find(r => r.tenantId === tenant.id);
-        const prevRecord = prevRecords.find(r => r.tenantId === tenant.id);
-
-        const buildInfra = (type: InfraType) => {
-          if (!tenant.settings[type].hasMeter) return null;
-          return {
-            previous: prevRecord?.readings[type]?.currentValue || 0,
-            current: record?.readings[type]?.currentValue ?? '', // 既存入力があれば反映
-            baseFee: tenant.settings[type].baseFee,
-            unitPrice: tenant.settings[type].unitPrice,
-          };
-        };
-
-        return {
-          tenantId: tenant.id,
-          roomName: tenant.roomName,
-          sortOrder: tenant.sortOrder,
-          recordId: record?.id,
-          light: buildInfra('light'),
-          power: buildInfra('power'),
-          water: buildInfra('water'),
-        };
-      });
-
-      setData(mergedData);
-      setLoading(false);
+      const ids = records.map(r => r.id).filter(Boolean);
+      if (ids.length === 0) {
+        toast.error("保存済みのレコードがありません。先にデータを保存してください。");
+        return;
+      }
+      await updateBillingRecordsStatus(ids, 'APPROVED');
+      toast.success(`${month} のデータを承認しました`);
+    } catch (err) {
+      console.error(err);
+      toast.error("承認に失敗しました。");
     }
-    loadData();
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    const tenants = await getTenants();
+    const records = await getBillingRecords(month);
+
+    // 前月を計算
+    const prevMonthStr = shiftMonth(month, -1);
+    const prevRecords = await getBillingRecords(prevMonthStr);
+
+    const mergedData: TenantItem[] = tenants.map(tenant => {
+      const record = records.find(r => r.tenantId === tenant.id);
+      const prevRecord = prevRecords.find(r => r.tenantId === tenant.id);
+
+      const buildInfra = (type: InfraType): InfraData | null => {
+        if (!tenant.settings[type].hasMeter) return null;
+        const currentVal = record?.readings[type]?.currentValue;
+        return {
+          previous: prevRecord?.readings[type]?.currentValue || 0,
+          current: currentVal !== undefined ? currentVal : ('' as const),
+          baseFee: tenant.settings[type].baseFee,
+          unitPrice: tenant.settings[type].unitPrice,
+        };
+      };
+
+      return {
+        tenantId: tenant.id,
+        roomName: tenant.roomName,
+        sortOrder: tenant.sortOrder,
+        recordId: record?.id,
+        light: buildInfra('light'),
+        power: buildInfra('power'),
+        water: buildInfra('water'),
+      };
+    });
+
+    setData(mergedData);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (month) loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
   const handleCurrentChange = (tenantIndex: number, type: InfraType, value: string) => {
@@ -203,22 +236,15 @@ export default function FormPane() {
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, tenantIndex: number, type: InfraType) => {
-    // EnterまたはTabが押されたら「次のテナントの同じ入力フィールド」へフォーカスを移動
     if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault(); // デフォルトのタブ移動をキャンセル
-      
+      e.preventDefault();
       const isShift = e.shiftKey;
       let targetIndex = tenantIndex;
       let found = false;
 
-      // 前後の入力可能なテナントを探すループ
       while (!found) {
         targetIndex = isShift ? targetIndex - 1 : targetIndex + 1;
-        
-        if (targetIndex < 0 || targetIndex >= data.length) {
-          break; // 最初か最後に到達したら終了
-        }
-
+        if (targetIndex < 0 || targetIndex >= data.length) break;
         if (data[targetIndex]?.[type] !== null) {
           found = true;
           break;
@@ -228,17 +254,37 @@ export default function FormPane() {
       if (found) {
         const nextKey = `${targetIndex}-${type}`;
         inputRefs.current[nextKey]?.focus();
-        inputRefs.current[nextKey]?.select(); // 移動時に全選択にしておくと上書きしやすい
+        inputRefs.current[nextKey]?.select();
       }
     }
   };
 
-
-
   return (
     <div className="h-full flex flex-col bg-gray-50">
+      {/* ヘッダー */}
       <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center shadow-sm z-10 sticky top-0">
-        <h1 className="text-xl font-bold text-gray-800">検針データ入力</h1>
+        {/* 月ナビゲーション */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push(`/billing/input/${shiftMonth(month, -1)}`)}
+            className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500"
+            title="前月"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <h1 className="text-xl font-bold text-gray-800 min-w-[120px] text-center">
+            {month} 検針入力
+          </h1>
+          <button
+            onClick={() => router.push(`/billing/input/${shiftMonth(month, 1)}`)}
+            className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500"
+            title="翌月"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* アクションボタン群 */}
         <div className="flex gap-2">
           <Dialog open={isPasteDialogOpen} onOpenChange={setIsPasteDialogOpen}>
             <DialogTrigger render={<Button variant="outline">AIの結果を一括入力</Button>} />
@@ -246,10 +292,10 @@ export default function FormPane() {
               <DialogHeader>
                 <DialogTitle>テキストから数値を抽出</DialogTitle>
                 <DialogDescription>
-                  LLM等の解析結果をそのまま貼り付けてください。数値だけを順番に抽出して左側の入力欄に埋めます。
+                  LLM等の解析結果をそのまま貼り付けてください。数値だけを順番に抽出して入力欄に埋めます。
                 </DialogDescription>
                 <div className="mt-2 text-right">
-                  <button 
+                  <button
                     onClick={copyPrompt}
                     className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-2.5 py-1.5 rounded-md transition-colors"
                   >
@@ -272,10 +318,17 @@ export default function FormPane() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button onClick={handleSaveToFirestore}>承認してデータを確定</Button>
+
+          <Button variant="outline" onClick={handleApprove}>
+            承認する
+          </Button>
+          <Button onClick={handleSaveToFirestore}>
+            データを保存
+          </Button>
         </div>
       </div>
 
+      {/* テナント一覧 */}
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -293,74 +346,74 @@ export default function FormPane() {
               <div className="bg-primary/5 px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-primary">{tenant.roomName}</h3>
               </div>
-            
-            <div className="p-4">
-              <Table>
-                <TableHeader className="bg-gray-50">
-                  <TableRow>
-                    <TableHead className="w-16">種別</TableHead>
-                    <TableHead className="w-24 text-right">前月指針</TableHead>
-                    <TableHead className="w-32">当月指針</TableHead>
-                    <TableHead className="w-24 text-right">使用量</TableHead>
-                    <TableHead className="w-32 text-right">請求額 (円)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(['light', 'power', 'water'] as InfraType[]).map((type) => {
-                    const infra = tenant[type];
-                    if (!infra) return null; // 設定がない場合は非表示
 
-                    const key = `${index}-${type}`;
-                    const calcResult = calculateInfraBilling(
-                      infra.previous,
-                      infra.current,
-                      { baseFee: infra.baseFee, unitPrice: infra.unitPrice }
-                    );
+              <div className="p-4">
+                <Table>
+                  <TableHeader className="bg-gray-50">
+                    <TableRow>
+                      <TableHead className="w-16">種別</TableHead>
+                      <TableHead className="w-24 text-right">前月指針</TableHead>
+                      <TableHead className="w-32">当月指針</TableHead>
+                      <TableHead className="w-24 text-right">使用量</TableHead>
+                      <TableHead className="w-32 text-right">請求額 (円)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(['light', 'power', 'water'] as InfraType[]).map((type) => {
+                      const infra = tenant[type];
+                      if (!infra) return null;
 
-                    return (
-                      <TableRow key={type}>
-                        <TableCell className="font-semibold text-gray-600">
-                          {infraLabels[type]}
-                        </TableCell>
-                        <TableCell className="text-right text-gray-500">
-                          {infra.previous.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            value={infra.current}
-                            onChange={(e) => handleCurrentChange(index, type, e.target.value)}
-                            onKeyDown={(e) => handleKeyDown(e, index, type)}
-                            ref={(el) => {
-                              if (el) inputRefs.current[key] = el;
-                            }}
-                            className={`h-9 w-full text-right focus-visible:ring-2 ${
-                              calcResult.isError ? "border-red-500 focus-visible:ring-red-500 bg-red-50 text-red-700" : ""
-                            }`}
-                            placeholder="入力"
-                            title={calcResult.errorMessage}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {calcResult.usage !== null ? (
-                            calcResult.usage.toLocaleString()
-                          ) : (
-                            <span className="text-gray-300">-</span>
-                          )}
-                          {calcResult.isError && (
-                            <span className="text-red-500 text-xs block font-bold mt-1">警告</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-blue-600">
-                          {calcResult.fee !== null ? `¥${calcResult.fee.toLocaleString()}` : <span className="text-gray-300">-</span>}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                      const key = `${index}-${type}`;
+                      const calcResult = calculateInfraBilling(
+                        infra.previous,
+                        infra.current,
+                        { baseFee: infra.baseFee, unitPrice: infra.unitPrice }
+                      );
+
+                      return (
+                        <TableRow key={type}>
+                          <TableCell className="font-semibold text-gray-600">
+                            {infraLabels[type]}
+                          </TableCell>
+                          <TableCell className="text-right text-gray-500">
+                            {infra.previous.toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              value={infra.current}
+                              onChange={(e) => handleCurrentChange(index, type, e.target.value)}
+                              onKeyDown={(e) => handleKeyDown(e, index, type)}
+                              ref={(el) => {
+                                if (el) inputRefs.current[key] = el;
+                              }}
+                              className={`h-9 w-full text-right focus-visible:ring-2 ${
+                                calcResult.isError ? "border-red-500 focus-visible:ring-red-500 bg-red-50 text-red-700" : ""
+                              }`}
+                              placeholder="入力"
+                              title={calcResult.errorMessage}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {calcResult.usage !== null ? (
+                              calcResult.usage.toLocaleString()
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                            {calcResult.isError && (
+                              <span className="text-red-500 text-xs block font-bold mt-1">警告</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-blue-600">
+                            {calcResult.fee !== null ? `¥${calcResult.fee.toLocaleString()}` : <span className="text-gray-300">-</span>}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
-          </div>
           ))
         )}
       </div>

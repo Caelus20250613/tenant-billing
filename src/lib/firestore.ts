@@ -107,3 +107,26 @@ export const saveBillingRecordsBatch = async (records: MonthlyBillingRecord[]): 
   }
   await batch.commit();
 };
+
+export const seedTenants = async (records: Omit<Tenant, 'id'>[]): Promise<void> => {
+  const batch = writeBatch(db);
+  for (const record of records) {
+    const docRef = doc(tenantsRef);
+    batch.set(docRef, record);
+  }
+  await batch.commit();
+};
+
+export const updateBillingRecordsStatus = async (
+  recordIds: string[],
+  status: 'PENDING' | 'APPROVED' | 'ISSUED'
+): Promise<void> => {
+  const ids = recordIds.filter(id => id && !id.startsWith('new-'));
+  if (ids.length === 0) return;
+  const batch = writeBatch(db);
+  for (const id of ids) {
+    const docRef = doc(db, BILLING_RECORDS_COLLECTION, id);
+    batch.update(docRef, { status });
+  }
+  await batch.commit();
+};
