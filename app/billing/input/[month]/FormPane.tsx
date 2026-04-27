@@ -66,17 +66,43 @@ export default function FormPane() {
 
   const { extractedValues, clearExtractedValues, setExtractedValues } = useOCRStore();
 
-  const RECOMMENDED_PROMPT = `あなたは検針表のデータ抽出エキスパートです。
-添付された画像から各テナントの数値を[電灯, 動力, 水道]の順に抽出し、純粋な数値配列（JSON形式）のみを返してください。
+  // テナント一覧を動的に組み込んだプロンプトを生成する
+  const buildPrompt = () => {
+    const tenantLines = data.map(t => {
+      const meters = (['light', 'power', 'water'] as InfraType[])
+        .filter(type => t[type] !== null)
+        .map(type => infraLabels[type])
+        .join('・');
+      return `- ${t.roomName}：${meters}`;
+    }).join('\n');
+
+    const exampleLines = data.map(t => {
+      const fields = (['light', 'power', 'water'] as InfraType[])
+        .filter(type => t[type] !== null)
+        .map(type => `"${type}": 数値`)
+        .join(', ');
+      return `  "${t.roomName}": {${fields}}`;
+    }).join(',\n');
+
+    return `あなたは検針表のデータ抽出エキスパートです。
+添付された画像から、以下のテナントそれぞれの指針値を抽出してください。
+
+【対象テナント一覧】
+${tenantLines}
+
+【出力形式】以下のJSONのみを返してください（コードブロック不要）:
+{
+${exampleLines}
+}
 
 ルール：
-1. テナント入居行のみを対象とし、左から右へ「電灯、動力、水道」の順で並べる。
-2. 水道の列がない場合は 0 とする。
-3. 集計行（ビル全体等）や日付・室番などは一切含めない。
-4. 出力例: [80685, 67667, 970, 27696, 51340, 3643, ...]`;
+1. 画像にテナントが見当たらない場合はそのキーを省略する
+2. 対象テナント一覧にないテナントは出力しない
+3. 集計行・ビル全体の行は無視する`;
+  };
 
   const copyPrompt = () => {
-    navigator.clipboard.writeText(RECOMMENDED_PROMPT);
+    navigator.clipboard.writeText(buildPrompt());
     toast.success("AIへの指示文をコピーしました。Gemini等に貼り付けてください。");
   };
 
@@ -104,7 +130,42 @@ export default function FormPane() {
   }, [extractedValues, data.length, clearExtractedValues]);
 
   const handlePasteApply = () => {
-    const numbers = pastedText.match(/\d+(\.\d+)?/g);
+    const trimmed = pastedText.trim();
+
+    // まず名前付きJSON形式として解析を試みる
+    try {
+      const jsonStr = trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
+
+      if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+        // テナント名で照合して反映
+        const matchCount = Object.keys(parsed).filter(name =>
+          data.some(t => t.roomName === name)
+        ).length;
+
+        setData(prev => {
+          const next: TenantItem[] = JSON.parse(JSON.stringify(prev));
+          next.forEach(t => {
+            const vals = parsed[t.roomName];
+            if (!vals) return; // 画像になければスキップ
+            if (t.light && vals.light !== undefined) t.light.current = vals.light;
+            if (t.power && vals.power !== undefined) t.power.current = vals.power;
+            if (t.water && vals.water !== undefined) t.water.current = vals.water;
+          });
+          return next;
+        });
+
+        setPastedText("");
+        setIsPasteDialogOpen(false);
+        toast.success(`${matchCount}件のテナントに値を反映しました。内容をご確認ください。`);
+        return;
+      }
+    } catch {
+      // JSONパース失敗 → 旧来の数値配列方式にフォールバック
+    }
+
+    // フォールバック：数値を順番に抽出（旧方式）
+    const numbers = trimmed.match(/\d+(\.\d+)?/g);
     if (numbers) {
       const values = numbers.map(n => parseFloat(n));
       setExtractedValues(values);
