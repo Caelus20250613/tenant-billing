@@ -44,7 +44,6 @@ export default function Sidebar() {
     { name: "テナントマスタ管理", href: "/tenants", icon: Building2 },
     { name: "検針データ入力", href: billingInputHref, icon: PencilLine },
     { name: "請求書一覧・出力", href: billingSummaryHref, icon: FileText },
-    { name: "初期セットアップ", href: "/setup", icon: Settings },
   ];
 
   const getBaseRoute = (href: string) => {
@@ -83,6 +82,20 @@ export default function Sidebar() {
         })}
       </nav>
       
+      <div className="px-4 pb-2">
+        <Link
+          href="/setup"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors ${
+            pathname === "/setup"
+              ? "bg-blue-600/90 text-white shadow-sm"
+              : "text-gray-400 hover:bg-gray-800 hover:text-white"
+          }`}
+        >
+          <Settings className={`w-4 h-4 ${pathname === "/setup" ? "text-blue-100" : "text-gray-500"}`} />
+          <span className="text-xs font-medium">初期セットアップ</span>
+        </Link>
+      </div>
+
       <div className="p-4 border-t border-gray-800 bg-gray-900/50">
         <div className="text-xs text-gray-500 mb-1">ログインユーザー</div>
         <div className="text-sm font-medium flex items-center justify-between">
