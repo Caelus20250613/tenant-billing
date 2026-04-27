@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
 } from "firebase/auth";
 import { auth } from "@/src/lib/firebase";
@@ -24,17 +25,25 @@ export default function LoginPage() {
   const [isCreating, setIsCreating] = useState(false);
   const router = useRouter();
 
+  // Googleリダイレクト後の結果を処理
+  useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        router.push("/tenants");
+      }
+    }).catch((err) => {
+      if (err.code) setError("Googleログインに失敗しました。");
+    });
+  }, [router]);
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError("");
     try {
-      await signInWithPopup(auth, googleProvider);
-      router.push("/tenants");
+      // ポップアップブロック回避のためリダイレクト方式を使用
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
-      if (err.code !== "auth/popup-closed-by-user") {
-        setError("Googleログインに失敗しました。");
-      }
-    } finally {
+      setError("Googleログインに失敗しました。");
       setLoading(false);
     }
   };
