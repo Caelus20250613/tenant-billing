@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, PencilLine, FileText, LayoutDashboard, LogOut } from "lucide-react";
+import { Building2, PencilLine, FileText, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { signOut, onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/src/lib/firebase";
@@ -44,6 +44,7 @@ export default function Sidebar() {
     { name: "テナントマスタ管理", href: "/tenants", icon: Building2 },
     { name: "検針データ入力", href: billingInputHref, icon: PencilLine },
     { name: "請求書一覧・出力", href: billingSummaryHref, icon: FileText },
+    { name: "初期セットアップ", href: "/setup", icon: Settings },
   ];
 
   const getBaseRoute = (href: string) => {
