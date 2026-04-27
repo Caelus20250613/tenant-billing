@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { InvoiceData } from "@/src/components/InvoicePDF";
+import type { InvoiceData } from "@/src/types";
 import { Button } from "@/components/ui/button";
 
 // @react-pdf/renderer はブラウザ専用のため SSR を無効にして動的インポート

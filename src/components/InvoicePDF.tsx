@@ -1,4 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
+import type { InvoiceLineItem, InvoiceData } from '../types';
 
 // 日本語フォントを登録
 Font.register({
@@ -98,23 +99,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export interface InvoiceLineItem {
-  id: string;
-  type: 'light' | 'power' | 'water';
-  label: string;
-  previousValue: number | null;
-  currentValue: number | null;
-  usage: number;
-  fee: number;
-}
-
-export interface InvoiceData {
-  groupId: string;
-  recipientName: string;
-  billingMonth: string;
-  items: InvoiceLineItem[];
-  totalAmount: number;
-}
+export type { InvoiceLineItem, InvoiceData };
 
 export const InvoicePDFDocument = ({ invoices }: { invoices: InvoiceData[] }) => {
   return (

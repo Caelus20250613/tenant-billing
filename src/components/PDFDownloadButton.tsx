@@ -2,7 +2,8 @@
 
 // @react-pdf/renderer はブラウザ専用のため、このファイルは必ず next/dynamic + ssr:false で読み込むこと
 import { PDFDownloadLink } from "@react-pdf/renderer";
-import { InvoicePDFDocument, InvoiceData } from "./InvoicePDF";
+import { InvoicePDFDocument } from "./InvoicePDF";
+import type { InvoiceData } from "@/src/types";
 import { Button } from "@/components/ui/button";
 
 interface Props {
