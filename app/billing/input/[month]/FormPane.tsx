@@ -323,9 +323,9 @@ ${exampleLines}
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* ヘッダー */}
-      <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center shadow-sm z-10 sticky top-0">
+      <div className="px-4 py-3 bg-white border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shadow-sm z-10 sticky top-0">
         {/* 月ナビゲーション */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => router.push(`/billing/input/${shiftMonth(month, -1)}`)}
             className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500"
@@ -333,7 +333,7 @@ ${exampleLines}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-xl font-bold text-gray-800 min-w-[120px] text-center">
+          <h1 className="text-lg font-bold text-gray-800 min-w-[110px] text-center">
             {month} 検針入力
           </h1>
           <button
@@ -346,9 +346,9 @@ ${exampleLines}
         </div>
 
         {/* アクションボタン群 */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <Dialog open={isPasteDialogOpen} onOpenChange={setIsPasteDialogOpen}>
-            <DialogTrigger render={<Button variant="outline">AIの結果を一括入力</Button>} />
+            <DialogTrigger render={<Button variant="outline" size="sm">一括入力</Button>} />
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>テキストから数値を抽出</DialogTitle>
@@ -380,11 +380,11 @@ ${exampleLines}
             </DialogContent>
           </Dialog>
 
-          <Button variant="outline" onClick={handleApprove}>
+          <Button variant="outline" size="sm" onClick={handleApprove}>
             承認する
           </Button>
-          <Button onClick={handleSaveToFirestore}>
-            データを保存
+          <Button size="sm" onClick={handleSaveToFirestore}>
+            保存
           </Button>
         </div>
       </div>
