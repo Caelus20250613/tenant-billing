@@ -117,6 +117,16 @@ export const seedTenants = async (records: Omit<Tenant, 'id'>[]): Promise<void> 
   await batch.commit();
 };
 
+// 指定月の請求レコードを全件削除
+export const deleteBillingRecordsByMonth = async (billingMonth: string): Promise<number> => {
+  const q = query(billingRecordsRef, where('billingMonth', '==', billingMonth));
+  const snapshot = await getDocs(q);
+  const batch = writeBatch(db);
+  snapshot.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+  return snapshot.docs.length;
+};
+
 export const updateBillingRecordsStatus = async (
   recordIds: string[],
   status: 'PENDING' | 'APPROVED' | 'ISSUED'

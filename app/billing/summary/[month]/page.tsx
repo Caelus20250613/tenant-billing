@@ -14,7 +14,7 @@ const PDFDownloadButton = dynamic(
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import { getBillingRecords, getTenants, updateBillingRecordsStatus } from "@/src/lib/firestore";
+import { getBillingRecords, getTenants, updateBillingRecordsStatus, deleteBillingRecordsByMonth } from "@/src/lib/firestore";
 import { MonthlyBillingRecord, Tenant } from "@/src/types";
 
 interface GroupRecord {
@@ -126,6 +126,18 @@ export default function SummaryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
+  const handleDeleteMonth = async () => {
+    if (!confirm(`${month} の請求データを全件削除しますか？\nこの操作は取り消せません。`)) return;
+    try {
+      const count = await deleteBillingRecordsByMonth(month);
+      toast.success(`${month} のデータ ${count} 件を削除しました`);
+      setInvoices([]);
+    } catch (err) {
+      console.error(err);
+      toast.error("削除に失敗しました。");
+    }
+  };
+
   const handleMarkAsIssued = async (inv: GroupedInvoice) => {
     try {
       await updateBillingRecordsStatus(inv.recordIds, 'ISSUED');
@@ -185,9 +197,20 @@ export default function SummaryPage() {
           </button>
         </div>
 
-        {invoices.length > 0 && (
-          <PDFDownloadButton invoices={invoices} month={month} />
-        )}
+        <div className="flex gap-2 items-center">
+          {invoices.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleDeleteMonth}
+                className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+              >
+                この月のデータを削除
+              </Button>
+              <PDFDownloadButton invoices={invoices} month={month} />
+            </>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
