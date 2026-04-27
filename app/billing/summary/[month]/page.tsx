@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { PDFDownloadLink } from "@react-pdf/renderer";
-import { InvoicePDFDocument, InvoiceData } from "@/src/components/InvoicePDF";
+import dynamic from "next/dynamic";
+import { InvoiceData } from "@/src/components/InvoicePDF";
 import { Button } from "@/components/ui/button";
+
+// @react-pdf/renderer はブラウザ専用のため SSR を無効にして動的インポート
+const PDFDownloadButton = dynamic(
+  () => import("@/src/components/PDFDownloadButton").then(m => m.PDFDownloadButton),
+  { ssr: false, loading: () => <Button disabled className="bg-blue-600 font-semibold">読み込み中...</Button> }
+);
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -180,17 +186,7 @@ export default function SummaryPage() {
         </div>
 
         {invoices.length > 0 && (
-          <PDFDownloadLink
-            document={<InvoicePDFDocument invoices={invoices} />}
-            fileName={`invoices_${month}.pdf`}
-          >
-            {/* @ts-ignore */}
-            {({ loading }) => (
-              <Button disabled={loading} className="bg-blue-600 hover:bg-blue-700 font-semibold cursor-pointer">
-                {loading ? "PDF生成中..." : "一括PDFダウンロード"}
-              </Button>
-            )}
-          </PDFDownloadLink>
+          <PDFDownloadButton invoices={invoices} month={month} />
         )}
       </div>
 
